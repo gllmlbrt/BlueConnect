@@ -13,7 +13,13 @@ from bleak import BleakClient
 from bleak.backends.device import BLEDevice
 from bleak_retry_connector import establish_connection
 
-from .const import BUTTON_CHAR_UUID, NOTIFY_CHAR_UUID, NOTIFY_TIMEOUT
+from .const import (
+    BUTTON_CHAR_UUID,
+    FIRMWARE_VERSION_CHAR_UUID,
+    HARDWARE_MODEL_CHAR_UUID,
+    NOTIFY_CHAR_UUID,
+    NOTIFY_TIMEOUT,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -115,6 +121,56 @@ class BlueConnectGoBluetoothDeviceData:
         _LOGGER.debug("Got Status")
         return device
 
+    async def _get_device_info(
+        self, client: BleakClient, device: BlueConnectGoDevice
+    ) -> None:
+        """Read firmware version and hardware model from BLE Device Information Service."""
+        try:
+            fw_bytes = await client.read_gatt_char(FIRMWARE_VERSION_CHAR_UUID)
+            device.sensors["firmware_version"] = fw_bytes.decode("utf-8").strip()
+            _LOGGER.debug("Firmware version: %s", device.sensors["firmware_version"])
+        except UnicodeDecodeError as err:
+            _LOGGER.warning("Failed to decode firmware version characteristic: %s", err)
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed to read firmware version characteristic (%s): %s",
+                type(err).__name__,
+                err,
+            )
+
+        try:
+            hw_bytes = await client.read_gatt_char(HARDWARE_MODEL_CHAR_UUID)
+            device.sensors["hardware_model"] = hw_bytes.decode("utf-8").strip()
+            _LOGGER.debug("Hardware model: %s", device.sensors["hardware_model"])
+        except UnicodeDecodeError as err:
+            _LOGGER.warning("Failed to decode hardware model characteristic: %s", err)
+        except Exception as err:
+            _LOGGER.warning(
+                "Failed to read hardware model characteristic (%s): %s",
+                type(err).__name__,
+                err,
+            )
+
+    async def update_device_info(
+        self, ble_device: BLEDevice
+    ) -> BlueConnectGoDevice:
+        """Connect to the device and read firmware version and hardware model."""
+        _LOGGER.debug("Update Device Info")
+
+        device = BlueConnectGoDevice()
+        device.name = ble_device.address
+        device.address = ble_device.address
+
+        client = await establish_connection(
+            BleakClient, ble_device, ble_device.address
+        )
+        try:
+            await self._get_device_info(client, device)
+        finally:
+            await client.disconnect()
+
+        return device
+
     async def update_device(
         self, ble_device: BLEDevice, skip_query=False
     ) -> BlueConnectGoDevice:
@@ -124,6 +180,8 @@ class BlueConnectGoBluetoothDeviceData:
         device = BlueConnectGoDevice()
         device.name = ble_device.address
         device.address = ble_device.address
+        device.sensors["firmware_version"] = None
+        device.sensors["hardware_model"] = None
         _LOGGER.debug("device.name: %s", device.name)
         _LOGGER.debug("device.address: %s", device.address)
 

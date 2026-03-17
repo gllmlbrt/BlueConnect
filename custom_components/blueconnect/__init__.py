@@ -46,6 +46,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except Exception as err:
             raise UpdateFailed(f"Unable to fetch data: {err}") from err
 
+        # Preserve previously read device info values across coordinator refreshes
+        if coordinator.data is not None:
+            data.sensors["firmware_version"] = coordinator.data.sensors.get(
+                "firmware_version"
+            )
+            data.sensors["hardware_model"] = coordinator.data.sensors.get(
+                "hardware_model"
+            )
+
         return data
 
     coordinator = DataUpdateCoordinator(
