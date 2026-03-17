@@ -125,31 +125,49 @@ class BlueConnectGoBluetoothDeviceData:
         self, client: BleakClient, device: BlueConnectGoDevice
     ) -> None:
         """Read firmware version and hardware model from BLE Device Information Service."""
-        try:
-            fw_bytes = await client.read_gatt_char(FIRMWARE_VERSION_CHAR_UUID)
-            device.sensors["firmware_version"] = fw_bytes.decode("utf-8").strip()
-            _LOGGER.debug("Firmware version: %s", device.sensors["firmware_version"])
-        except UnicodeDecodeError as err:
-            _LOGGER.warning("Failed to decode firmware version characteristic: %s", err)
-        except Exception as err:
-            _LOGGER.warning(
-                "Failed to read firmware version characteristic (%s): %s",
-                type(err).__name__,
-                err,
+        if client.services.get_characteristic(FIRMWARE_VERSION_CHAR_UUID) is None:
+            _LOGGER.debug(
+                "Firmware version characteristic (%s) not found on device, skipping",
+                FIRMWARE_VERSION_CHAR_UUID,
             )
+        else:
+            try:
+                fw_bytes = await client.read_gatt_char(FIRMWARE_VERSION_CHAR_UUID)
+                device.sensors["firmware_version"] = fw_bytes.decode("utf-8").strip()
+                _LOGGER.debug(
+                    "Firmware version: %s", device.sensors["firmware_version"]
+                )
+            except UnicodeDecodeError as err:
+                _LOGGER.warning(
+                    "Failed to decode firmware version characteristic: %s", err
+                )
+            except Exception as err:
+                _LOGGER.warning(
+                    "Failed to read firmware version characteristic (%s): %s",
+                    type(err).__name__,
+                    err,
+                )
 
-        try:
-            hw_bytes = await client.read_gatt_char(HARDWARE_MODEL_CHAR_UUID)
-            device.sensors["hardware_model"] = hw_bytes.decode("utf-8").strip()
-            _LOGGER.debug("Hardware model: %s", device.sensors["hardware_model"])
-        except UnicodeDecodeError as err:
-            _LOGGER.warning("Failed to decode hardware model characteristic: %s", err)
-        except Exception as err:
-            _LOGGER.warning(
-                "Failed to read hardware model characteristic (%s): %s",
-                type(err).__name__,
-                err,
+        if client.services.get_characteristic(HARDWARE_MODEL_CHAR_UUID) is None:
+            _LOGGER.debug(
+                "Hardware model characteristic (%s) not found on device, skipping",
+                HARDWARE_MODEL_CHAR_UUID,
             )
+        else:
+            try:
+                hw_bytes = await client.read_gatt_char(HARDWARE_MODEL_CHAR_UUID)
+                device.sensors["hardware_model"] = hw_bytes.decode("utf-8").strip()
+                _LOGGER.debug("Hardware model: %s", device.sensors["hardware_model"])
+            except UnicodeDecodeError as err:
+                _LOGGER.warning(
+                    "Failed to decode hardware model characteristic: %s", err
+                )
+            except Exception as err:
+                _LOGGER.warning(
+                    "Failed to read hardware model characteristic (%s): %s",
+                    type(err).__name__,
+                    err,
+                )
 
     async def update_device_info(
         self, ble_device: BLEDevice
