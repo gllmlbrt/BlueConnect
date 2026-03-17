@@ -198,8 +198,6 @@ class BlueConnectGoBluetoothDeviceData:
         device = BlueConnectGoDevice()
         device.name = ble_device.address
         device.address = ble_device.address
-        device.sensors["firmware_version"] = None
-        device.sensors["hardware_model"] = None
         _LOGGER.debug("device.name: %s", device.name)
         _LOGGER.debug("device.address: %s", device.address)
 

@@ -46,14 +46,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except Exception as err:
             raise UpdateFailed(f"Unable to fetch data: {err}") from err
 
-        # Preserve previously read device info values across coordinator refreshes
-        if coordinator.data is not None:
-            data.sensors["firmware_version"] = coordinator.data.sensors.get(
-                "firmware_version"
-            )
-            data.sensors["hardware_model"] = coordinator.data.sensors.get(
-                "hardware_model"
-            )
+        # Preserve device info values across coordinator refreshes.
+        # These keys are managed exclusively via the "Read Device Info" button;
+        # they must still exist in the sensors dict so the corresponding sensor
+        # entities are registered on the first setup.
+        prev_sensors = coordinator.data.sensors if coordinator.data is not None else {}
+        data.sensors["firmware_version"] = prev_sensors.get("firmware_version")
+        data.sensors["hardware_model"] = prev_sensors.get("hardware_model")
 
         return data
 
