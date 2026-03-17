@@ -96,6 +96,18 @@ SENSORS_MAPPING_TEMPLATE: dict[str, SensorEntityDescription] = {
         icon="mdi:pool-thermometer",
         suggested_display_precision=2,
     ),
+    "firmware_version": SensorEntityDescription(
+        key="firmware_version",
+        name="Firmware Version",
+        icon="mdi:chip",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    "hardware_model": SensorEntityDescription(
+        key="hardware_model",
+        name="Hardware Model",
+        icon="mdi:developer-board",
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
 }
 
 
@@ -121,17 +133,16 @@ async def async_setup_entry(
 
     entities = []
     _LOGGER.debug("got sensors: %s", coordinator.data.sensors)
-    for sensor_type, sensor_value in coordinator.data.sensors.items():
-        if sensor_type not in sensors_mapping:
+    for sensor_type, sensor_description in sensors_mapping.items():
+        if sensor_type not in coordinator.data.sensors:
             _LOGGER.debug(
-                "Unknown sensor type detected: %s, %s",
+                "Sensor type not in device data, skipping: %s",
                 sensor_type,
-                sensor_value,
             )
             continue
         entities.append(
             BlueConnectSensor(
-                coordinator, coordinator.data, sensors_mapping[sensor_type], entry
+                coordinator, coordinator.data, sensor_description, entry
             )
         )
 
