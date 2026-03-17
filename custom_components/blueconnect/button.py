@@ -95,5 +95,7 @@ class TakeMeasurementImmediately(
 
         _LOGGER.info(f"Button pressed: starting measurement for device at {device_address}")
 
-        # Trigger coordinator refresh which will properly update last_update_success_time
+        # Force a real BLE measurement regardless of Fit50 pump state
+        self.coordinator.force_update = True
+        # Trigger coordinator refresh which will properly update last_real_measurement_time
         await self.coordinator.async_request_refresh()

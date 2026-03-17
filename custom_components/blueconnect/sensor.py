@@ -286,7 +286,5 @@ class LastMeasurementTimestampSensor(
 
     @property
     def native_value(self) -> datetime | None:
-        """Return the timestamp of the last successful update."""
-        if self.coordinator.last_update_success and self.coordinator.last_update_success_time:
-            return self.coordinator.last_update_success_time
-        return None
+        """Return the timestamp of the last real BLE measurement."""
+        return getattr(self.coordinator, "last_real_measurement_time", None)
