@@ -12,6 +12,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import (
+    CONCENTRATION_PARTS_PER_MILLION,
     PERCENTAGE,
     EntityCategory,
     UnitOfConductivity,
@@ -25,12 +26,11 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
-    TimestampDataUpdateCoordinator,
+    DataUpdateCoordinator,
 )
-from datetime import datetime
 
 from .BlueConnectGo import BlueConnectGoDevice
-from .const import CONF_DEVICE_NAME, CONF_DEVICE_TYPE, DEVICE_TYPE_PLUS, DOMAIN
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -97,6 +97,15 @@ SENSORS_MAPPING_TEMPLATE: dict[str, SensorEntityDescription] = {
         icon="mdi:pool-thermometer",
         suggested_display_precision=2,
     ),
+    "chlorine": SensorEntityDescription(
+        key="chlorine",
+        name="Free Chlorine",
+        state_class=SensorStateClass.MEASUREMENT,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        native_unit_of_measurement=CONCENTRATION_PARTS_PER_MILLION,
+        icon="mdi:chemical-weapon",
+        suggested_display_precision=2,
+    ),
 }
 
 
@@ -107,57 +116,31 @@ async def async_setup_entry(
 ) -> None:
     """Set up the BlueConnect Go BLE sensors."""
 
-    coordinator: TimestampDataUpdateCoordinator[BlueConnectGoDevice] = hass.data[DOMAIN][
+    coordinator: DataUpdateCoordinator[BlueConnectGoDevice] = hass.data[DOMAIN][
         entry.entry_id
     ]
     sensors_mapping = SENSORS_MAPPING_TEMPLATE.copy()
-
-    # Get device type from config entry
-    device_type = entry.data.get(CONF_DEVICE_TYPE)
-
-    # Remove salinity and conductivity sensors if device is not Plus
-    if device_type != DEVICE_TYPE_PLUS:
-        sensors_mapping.pop("EC", None)
-        sensors_mapping.pop("salt", None)
-
     entities = []
-
-    # Only iterate over sensors if coordinator.data is available
-    if coordinator.data and coordinator.data.sensors:
-        _LOGGER.debug("got sensors: %s", coordinator.data.sensors)
-        for sensor_type, sensor_value in coordinator.data.sensors.items():
-            if sensor_type not in sensors_mapping:
-                _LOGGER.debug(
-                    "Unknown sensor type detected: %s, %s",
-                    sensor_type,
-                    sensor_value,
-                )
-                continue
-            entities.append(
-                BlueConnectSensor(
-                    coordinator, sensors_mapping[sensor_type], entry
-                )
+    _LOGGER.debug("got sensors: %s", coordinator.data.sensors)
+    for sensor_type, sensor_value in coordinator.data.sensors.items():
+        if sensor_type not in sensors_mapping:
+            _LOGGER.debug(
+                "Unknown sensor type detected: %s, %s",
+                sensor_type,
+                sensor_value,
             )
-    else:
-        # If no data yet, create sensors based on sensors_mapping
-        _LOGGER.debug("No data available yet, creating sensors from mapping")
-        for sensor_type, sensor_description in sensors_mapping.items():
-            entities.append(
-                BlueConnectSensor(
-                    coordinator, sensor_description, entry
-                )
+            continue
+        entities.append(
+            BlueConnectSensor(
+                coordinator, coordinator.data, sensors_mapping[sensor_type]
             )
-
-    # Add last successful measurement timestamp sensor
-    entities.append(
-        LastMeasurementTimestampSensor(coordinator, entry)
-    )
+        )
 
     async_add_entities(entities)
 
 
 class BlueConnectSensor(
-    CoordinatorEntity[TimestampDataUpdateCoordinator[BlueConnectGoDevice]], SensorEntity
+    CoordinatorEntity[DataUpdateCoordinator[BlueConnectGoDevice]], SensorEntity
 ):
     """BlueConnect Go BLE sensors for the device."""
 
@@ -166,127 +149,37 @@ class BlueConnectSensor(
 
     def __init__(
         self,
-        coordinator: TimestampDataUpdateCoordinator,
+        coordinator: DataUpdateCoordinator,
+        blueconnect_go_device: BlueConnectGoDevice,
         entity_description: SensorEntityDescription,
-        entry: config_entries.ConfigEntry,
     ) -> None:
         """Populate the BlueConnect Go entity with relevant data."""
         super().__init__(coordinator)
         self.entity_description = entity_description
 
-        # Get the device address from entry unique_id (MAC address)
-        device_address = entry.unique_id
+        name = f"{blueconnect_go_device.name} {blueconnect_go_device.identifier}"
 
-        # Use custom device name from config entry if available
-        device_name = entry.data.get(CONF_DEVICE_NAME)
-        if not device_name and coordinator.data:
-            # Fallback to default name from device
-            device_name = f"{coordinator.data.name} {coordinator.data.identifier}"
-        elif not device_name:
-            # Final fallback if device is not available
-            device_name = f"BlueConnect {device_address}"
+        self._attr_unique_id = f"{name}_{entity_description.key}"
 
-        self._attr_unique_id = f"{device_address}_{entity_description.key}"
-
-        self._id = device_address
-
-        # Get device model from config entry
-        device_type = entry.data.get(CONF_DEVICE_TYPE)
-        if device_type == DEVICE_TYPE_PLUS:
-            model = "Blue Connect Plus"
-        else:
-            model = "Blue Connect Go"
-
-        # Get hardware and software versions from device if available
-        hw_version = coordinator.data.hw_version if coordinator.data else None
-        sw_version = coordinator.data.sw_version if coordinator.data else None
-
+        self._id = blueconnect_go_device.address
         self._attr_device_info = DeviceInfo(
             connections={
                 (
                     CONNECTION_BLUETOOTH,
-                    device_address,
+                    blueconnect_go_device.address,
                 )
             },
-            name=device_name,
-            manufacturer="Blueriiot",
-            model=model,
-            hw_version=hw_version,
-            sw_version=sw_version,
+            name=name,
+            manufacturer="Blue Riiot",
+            model="Blue Connect Go",
+            hw_version=blueconnect_go_device.hw_version,
+            sw_version=blueconnect_go_device.sw_version,
         )
 
     @property
     def native_value(self) -> StateType:
         """Return the value reported by the sensor."""
-        if self.coordinator.data is None:
-            return None
         try:
             return self.coordinator.data.sensors[self.entity_description.key]
         except KeyError:
             return None
-
-
-class LastMeasurementTimestampSensor(
-    CoordinatorEntity[TimestampDataUpdateCoordinator[BlueConnectGoDevice]], SensorEntity
-):
-    """Sensor that shows the last successful measurement timestamp."""
-
-    _attr_has_entity_name = True
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_device_class = SensorDeviceClass.TIMESTAMP
-    _attr_icon = "mdi:clock-check-outline"
-
-    def __init__(
-        self,
-        coordinator: TimestampDataUpdateCoordinator,
-        entry: config_entries.ConfigEntry,
-    ) -> None:
-        """Initialize the last measurement timestamp sensor."""
-        super().__init__(coordinator)
-
-        # Get the device address from entry unique_id (MAC address)
-        device_address = entry.unique_id
-
-        # Use custom device name from config entry if available
-        device_name = entry.data.get(CONF_DEVICE_NAME)
-        if not device_name and coordinator.data:
-            # Fallback to default name from device
-            device_name = f"{coordinator.data.name} {coordinator.data.identifier}"
-        elif not device_name:
-            # Final fallback if device is not available
-            device_name = f"BlueConnect {device_address}"
-
-        self._attr_unique_id = f"{device_address}_last_measurement"
-        self._attr_name = "Last Successful Measurement"
-
-        # Get device model from config entry
-        device_type = entry.data.get(CONF_DEVICE_TYPE)
-        if device_type == DEVICE_TYPE_PLUS:
-            model = "Blue Connect Plus"
-        else:
-            model = "Blue Connect Go"
-
-        # Get hardware and software versions from device if available
-        hw_version = coordinator.data.hw_version if coordinator.data else None
-        sw_version = coordinator.data.sw_version if coordinator.data else None
-
-        self._attr_device_info = DeviceInfo(
-            connections={
-                (
-                    CONNECTION_BLUETOOTH,
-                    device_address,
-                )
-            },
-            name=device_name,
-            manufacturer="Blueriiot",
-            model=model,
-            hw_version=hw_version,
-            sw_version=sw_version,
-        )
-
-    @property
-    def native_value(self) -> datetime | None:
-        """Return the timestamp of the last successful update."""
-        if self.coordinator.last_update_success and self.coordinator.last_update_success_time:
-            return self.coordinator.last_update_success_time
-        return None
