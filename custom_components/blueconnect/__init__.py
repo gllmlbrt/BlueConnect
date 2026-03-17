@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 
 from homeassistant.components import bluetooth
@@ -44,13 +44,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         pump_entity = entry.data.get(CONF_PUMP_ENTITY)
 
         # If Fit50 mode is enabled, check pump state before taking any measurement
-        if fit50_mode and pump_entity:
+        if fit50_mode and pump_entity and not coordinator.force_update:
             pump_state = hass.states.get(pump_entity)
             if pump_state is None:
                 _LOGGER.warning(f"Pump entity {pump_entity} not found")
             elif pump_state.state not in ["on", "true", "1"]:
                 _LOGGER.debug(f"Pump is off (state: {pump_state.state}), skipping measurement")
                 return coordinator.data
+
+        # Reset force flag before doing the BLE call so a failure doesn't leave it set
+        coordinator.force_update = False
 
         ble_device = bluetooth.async_ble_device_from_address(hass, address)
         bcgo = BlueConnectGoBluetoothDeviceData(_LOGGER)
@@ -60,6 +63,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         except Exception as err:
             raise UpdateFailed(f"Unable to fetch data: {err}") from err
 
+        coordinator.last_real_measurement_time = datetime.now(timezone.utc)
         return data
 
     # Get the measurement interval from config entry, or use default
@@ -73,6 +77,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_method=_async_update_method,
         update_interval=timedelta(seconds=int(measurement_interval * 3600)) if measurement_interval > 0 else None,
     )
+
+    # Custom attributes used to track real BLE measurements independently of
+    # the coordinator's own last_update_success_time (which is bumped even when
+    # we return cached data due to the pump being off).
+    coordinator.last_real_measurement_time = None
+    coordinator.force_update = False
 
     await coordinator.async_config_entry_first_refresh()
 
