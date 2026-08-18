@@ -43,6 +43,7 @@ async def async_setup_entry(
 
     entities: list[BinarySensorEntity] = [
         Fit50ModeBinarySensor(coordinator, entry),
+        ReadingFailedBinarySensor(coordinator, entry),
     ]
 
     # Only add the pump state sensor if Fit50 mode is enabled and a pump entity is configured
@@ -110,6 +111,48 @@ class Fit50ModeBinarySensor(
     def is_on(self) -> bool:
         """Return True if Fit50 mode is enabled."""
         return self.entry.data.get(CONF_FIT50_MODE, False)
+
+
+class ReadingFailedBinarySensor(
+    CoordinatorEntity[TimestampDataUpdateCoordinator[BlueConnectGoDevice]], BinarySensorEntity
+):
+    """Binary sensor that turns on when the last BLE reading attempt failed."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_icon = "mdi:bluetooth-off"
+
+    def __init__(
+        self,
+        coordinator: TimestampDataUpdateCoordinator,
+        entry: ConfigEntry,
+    ) -> None:
+        """Initialize the reading failed binary sensor."""
+        super().__init__(coordinator)
+
+        device_address = entry.unique_id
+        self._attr_unique_id = f"{device_address}_reading_failed"
+        self._attr_name = "Reading Failed"
+        self._attr_device_info = _build_device_info(coordinator, entry)
+
+    @property
+    def available(self) -> bool:
+        """Always available so the alarm is visible even when readings fail."""
+        return True
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if the last BLE reading attempt failed."""
+        return not self.coordinator.last_update_success
+
+    @property
+    def extra_state_attributes(self) -> dict[str, str | None]:
+        """Expose the timestamp of the last successful reading."""
+        last_success = getattr(self.coordinator, "last_real_measurement_time", None)
+        return {
+            "last_successful_reading": last_success.isoformat() if last_success else None,
+        }
 
 
 class PumpStateBinarySensor(

@@ -64,8 +64,11 @@ class BlueConnectGoBluetoothDeviceData:
 
         try:
             await asyncio.wait_for(data_ready_event.wait(), timeout=NOTIFY_TIMEOUT)
-        except TimeoutError:
-            _LOGGER.warning("Timer expired")
+        except TimeoutError as err:
+            _LOGGER.warning("Timer expired waiting for status notification")
+            raise TimeoutError(
+                "Timed out waiting for status notification from BlueConnect Go device"
+            ) from err
 
         _LOGGER.debug("Status acquisition finished")
         return device
@@ -131,8 +134,10 @@ class BlueConnectGoBluetoothDeviceData:
                 BleakClient, ble_device, ble_device.address
             )
             _LOGGER.debug("Got Client")
-            await self._get_status(client, device)
-            _LOGGER.debug("got Status")
-            await client.disconnect()
+            try:
+                await self._get_status(client, device)
+                _LOGGER.debug("got Status")
+            finally:
+                await client.disconnect()
 
         return device

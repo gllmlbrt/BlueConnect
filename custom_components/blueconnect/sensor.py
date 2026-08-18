@@ -216,6 +216,11 @@ class BlueConnectSensor(
         )
 
     @property
+    def available(self) -> bool:
+        """Keep showing the last known reading even if a subsequent poll fails."""
+        return self.coordinator.data is not None
+
+    @property
     def native_value(self) -> StateType:
         """Return the value reported by the sensor."""
         if self.coordinator.data is None:
@@ -283,6 +288,11 @@ class LastMeasurementTimestampSensor(
             hw_version=hw_version,
             sw_version=sw_version,
         )
+
+    @property
+    def available(self) -> bool:
+        """Always available so the last successful reading time stays visible during failures."""
+        return True
 
     @property
     def native_value(self) -> datetime | None:
